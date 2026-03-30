@@ -41,7 +41,7 @@ If release signing variables are missing, the release artifact is intentionally 
 
 ## Magisk module packaging
 
-The repository tracks the versioned Magisk metadata and wrapper scripts under [magisk-module](/home/keytron46/git/ClamGuard/magisk-module).
+The repository tracks the versioned Magisk metadata and wrapper scripts under [magisk-module](../magisk-module).
 
 The heavy runtime payload is packaged from a staging directory defined by:
 
@@ -49,7 +49,7 @@ The heavy runtime payload is packaged from a staging directory defined by:
 
 If it is unset, the scripts default to:
 
-- `/home/keytron46/clamguard-magisk`
+- `../clamguard-magisk`
 
 The staging directory must contain:
 
@@ -65,21 +65,21 @@ The staging directory must contain:
 Build only the APK:
 
 ```bash
-cd /home/keytron46/git/ClamGuard
+cd ClamGuard
 ./build-tools/build-apk.sh
 ```
 
 Build the Magisk module zip:
 
 ```bash
-cd /home/keytron46/git/ClamGuard
+cd ClamGuard
 ./release-tools/package-magisk-module.sh
 ```
 
 Build the full release bundle:
 
 ```bash
-cd /home/keytron46/git/ClamGuard
+cd ClamGuard
 ./release-tools/build-release-artifacts.sh
 ```
 

@@ -28,22 +28,22 @@ Current status:
 
 Version metadata lives in:
 
-- [VERSION](/home/keytron46/git/ClamGuard/VERSION)
-- [VERSION_CODE](/home/keytron46/git/ClamGuard/VERSION_CODE)
+- [VERSION](VERSION)
+- [VERSION_CODE](VERSION_CODE)
 
 ## Building
 
 Build the APK locally:
 
 ```bash
-cd /home/keytron46/git/ClamGuard
+cd ClamGuard
 ./build-tools/build-apk.sh
 ```
 
 Build release artifacts with release naming:
 
 ```bash
-cd /home/keytron46/git/ClamGuard
+cd ClamGuard
 ./release-tools/build-release-artifacts.sh
 ```
 
@@ -54,7 +54,7 @@ By default this produces:
 
 If release signing variables are provided, the APK is emitted without the `-debug` suffix.
 
-See [docs/RELEASES.md](/home/keytron46/git/ClamGuard/docs/RELEASES.md) for the release layout and environment variables.
+See [docs/RELEASES.md](docs/RELEASES.md) for the release layout and environment variables.
 
 ## ClamAV Base
 
@@ -66,4 +66,4 @@ ClamAV is licensed under `GPL-2.0`, and this project is distributed under the sa
 
 This repository is licensed under `GPL-2.0`.
 
-See [LICENSE](/home/keytron46/git/ClamGuard/LICENSE).
+See [LICENSE](LICENSE).

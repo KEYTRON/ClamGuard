@@ -6,7 +6,7 @@ VERSION="$(tr -d '\n' <"$PROJECT_DIR/VERSION")"
 VERSION_CODE="$(tr -d '\n' <"$PROJECT_DIR/VERSION_CODE")"
 DIST_DIR="${1:-$PROJECT_DIR/dist/v$VERSION}"
 TEMPLATE_DIR="$PROJECT_DIR/magisk-module"
-PAYLOAD_DIR="${CLAMGUARD_MAGISK_DIR:-/home/keytron46/clamguard-magisk}"
+PAYLOAD_DIR="${CLAMGUARD_MAGISK_DIR:-$PROJECT_DIR/../clamguard-magisk}"
 STAGE_DIR="$PROJECT_DIR/build/magisk-stage"
 OUT_ZIP="$DIST_DIR/ClamGuard-v$VERSION-magisk-module.zip"
 
