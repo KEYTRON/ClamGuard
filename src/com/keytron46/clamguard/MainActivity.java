@@ -2,11 +2,9 @@ package com.keytron46.clamguard;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.content.Context;
-import android.content.pm.ApplicationInfo;
-import android.content.pm.PackageManager;
 import android.graphics.Typeface;
 import android.os.Bundle;
 import android.os.Handler;
@@ -26,7 +24,7 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
+import java.text.DecimalFormat;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -55,7 +53,6 @@ public class MainActivity extends Activity {
     private static final String DEFAULT_TARGET = "/sdcard";
     private static final String QUICK_SCAN_TARGET = "/sdcard/Download";
     private static final String LEGACY_ROOT = "/data/local/tmp/clamav";
-    private static final String SCAN_TARGETS_FILE = "scan-targets.txt";
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -83,6 +80,10 @@ public class MainActivity extends Activity {
     private TextView databaseStatusValueView;
     private TextView lastScanValueView;
     private TextView statusTextView;
+    private TextView scanModeView;
+    private TextView scanProgressPercentView;
+    private TextView scanProgressDetailsView;
+    private TextView backgroundMonitorView;
     private TextView logTextView;
     private ProgressBar scanProgressView;
     private Button saveButton;
@@ -92,7 +93,9 @@ public class MainActivity extends Activity {
     private Button updateDbButton;
     private Button quickScanButton;
     private Button fullScanButton;
+    private Button selectiveScanButton;
     private Button toggleSettingsButton;
+    private RadarView radarView;
 
     private boolean rootReady = false;
     private boolean moduleReady = false;
@@ -116,6 +119,12 @@ public class MainActivity extends Activity {
         loadPreferences();
         loadLastScanState();
         wireButtons();
+        setProgressPresentation(
+                getString(R.string.scan_mode_ready),
+                getString(R.string.progress_percent_waiting),
+                getString(R.string.progress_ready_idle),
+                true
+        );
         updateDashboardFromState();
         renderThreats();
         mainHandler.post(new Runnable() {
@@ -147,6 +156,8 @@ public class MainActivity extends Activity {
                     }
                 }
             }, 250);
+        } else {
+            updateDashboardFromState();
         }
     }
 
@@ -172,6 +183,10 @@ public class MainActivity extends Activity {
         databaseStatusValueView = (TextView) findViewById(R.id.database_status_value);
         lastScanValueView = (TextView) findViewById(R.id.last_scan_value);
         statusTextView = (TextView) findViewById(R.id.status_text);
+        scanModeView = (TextView) findViewById(R.id.scan_mode_badge);
+        scanProgressPercentView = (TextView) findViewById(R.id.scan_progress_percent);
+        scanProgressDetailsView = (TextView) findViewById(R.id.scan_progress_details);
+        backgroundMonitorView = (TextView) findViewById(R.id.background_monitor_status);
         logTextView = (TextView) findViewById(R.id.log_text);
         scanProgressView = (ProgressBar) findViewById(R.id.scan_progress);
         saveButton = (Button) findViewById(R.id.save_button);
@@ -181,7 +196,9 @@ public class MainActivity extends Activity {
         updateDbButton = (Button) findViewById(R.id.update_db_button);
         quickScanButton = (Button) findViewById(R.id.quick_scan_button);
         fullScanButton = (Button) findViewById(R.id.full_scan_button);
+        selectiveScanButton = (Button) findViewById(R.id.selective_scan_button);
         toggleSettingsButton = (Button) findViewById(R.id.toggle_settings_button);
+        radarView = (RadarView) findViewById(R.id.radar_view);
     }
 
     private void loadPreferences() {
@@ -303,7 +320,7 @@ public class MainActivity extends Activity {
             @Override
             public void onClick(View v) {
                 savePreferences();
-                runShellTask(getString(R.string.status_updating_db), buildFreshclamCommand(), false, false, null);
+                runDatabaseUpdate();
             }
         });
 
@@ -311,7 +328,15 @@ public class MainActivity extends Activity {
             @Override
             public void onClick(View v) {
                 savePreferences();
-                runShellTask(getString(R.string.status_quick_scanning), buildScanCommand(QUICK_SCAN_TARGET), true, true, null);
+                startPlannedScan(
+                        getString(R.string.scan_mode_quick),
+                        getString(R.string.status_planning_quick_scan),
+                        getString(R.string.status_quick_scanning),
+                        QUICK_SCAN_TARGET,
+                        true,
+                        0L,
+                        false
+                );
             }
         });
 
@@ -319,7 +344,22 @@ public class MainActivity extends Activity {
             @Override
             public void onClick(View v) {
                 savePreferences();
-                runShellTask(getString(R.string.status_scanning), buildScanCommand(textOf(targetPathView)), true, true, null);
+                startPlannedScan(
+                        getString(R.string.scan_mode_full),
+                        getString(R.string.status_planning_full_scan),
+                        getString(R.string.status_scanning),
+                        textOf(targetPathView),
+                        true,
+                        0L,
+                        true
+                );
+            }
+        });
+
+        selectiveScanButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showSelectiveScanDialog();
             }
         });
     }
@@ -329,7 +369,13 @@ public class MainActivity extends Activity {
             return;
         }
 
-        setBusy(true, getString(R.string.status_preparing_engine));
+        setBusy(true, getString(R.string.status_preparing_engine), false);
+        setProgressPresentation(
+                getString(R.string.scan_mode_ready),
+                getString(R.string.progress_percent_waiting),
+                getString(R.string.status_preparing_engine),
+                true
+        );
         appendLog(getString(R.string.status_preparing_engine));
         executor.execute(new Runnable() {
             @Override
@@ -350,14 +396,14 @@ public class MainActivity extends Activity {
                         if (finalError != null) {
                             moduleReady = false;
                             databaseReady = false;
-                            setBusy(false, getString(R.string.status_runtime_error));
+                            setBusy(false, getString(R.string.status_runtime_error), false);
                             appendLog(getString(R.string.runtime_prepare_failed_prefix) + finalError);
                             updateDashboardFromState();
                             return;
                         }
 
                         loadPreferences();
-                        setBusy(false, getString(R.string.status_idle));
+                        setBusy(false, getString(R.string.status_idle), false);
                         runShellTask(getString(R.string.status_checking), buildEnvironmentCheckCommand(), false, false, null);
                     }
                 });
@@ -365,16 +411,284 @@ public class MainActivity extends Activity {
         });
     }
 
-    private void runShellTask(final String status, final String command, final boolean parseThreats, final boolean clearThreatsFirst, final Runnable onSuccess) {
+    private void runDatabaseUpdate() {
+        if (TextUtils.isEmpty(textOf(freshclamPathView)) || TextUtils.isEmpty(textOf(databasePathView))) {
+            toast(getString(R.string.missing_path_message));
+            return;
+        }
+
+        setBusy(true, getString(R.string.status_updating_db), false);
+        setProgressPresentation(
+                getString(R.string.scan_mode_update),
+                getString(R.string.progress_percent_waiting),
+                getString(R.string.status_updating_db),
+                true
+        );
+        appendLog(getString(R.string.status_updating_db));
+
+        executor.execute(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    RuntimeAssetsManager.ensureInstalled(MainActivity.this);
+                } catch (IOException e) {
+                    final String message = e.getMessage();
+                    mainHandler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            setBusy(false, getString(R.string.status_runtime_error), false);
+                            appendLog(getString(R.string.runtime_prepare_failed_prefix) + message);
+                            updateDashboardFromState();
+                        }
+                    });
+                    return;
+                }
+
+                final DatabaseUpdateRunner.Result result = DatabaseUpdateRunner.run(
+                        MainActivity.this,
+                        textOf(freshclamPathView),
+                        textOf(databasePathView),
+                        new DatabaseUpdateRunner.Callback() {
+                            @Override
+                            public void onLog(final String line) {
+                                mainHandler.post(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        appendLog(line);
+                                        scanProgressDetailsView.setText(line);
+                                    }
+                                });
+                            }
+                        });
+
+                mainHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (result.exitCode == 0) {
+                            databaseReady = true;
+                            databaseStatusValueView.setText(getString(R.string.value_ready));
+                            ProtectionScheduler.markDatabaseUpdated(MainActivity.this);
+                        }
+
+                        scanProgressPercentView.setText(
+                                result.exitCode == 0
+                                        ? getString(R.string.progress_percent_done)
+                                        : getString(R.string.progress_percent_error)
+                        );
+                        if (!TextUtils.isEmpty(result.summary)) {
+                            if ("up-to-date".equals(result.summary)) {
+                                scanProgressDetailsView.setText(getString(R.string.status_db_up_to_date));
+                            } else if ("updated".equals(result.summary) || "ok".equals(result.summary)) {
+                                scanProgressDetailsView.setText(getString(R.string.status_db_updated));
+                            } else {
+                                scanProgressDetailsView.setText(getString(R.string.status_db_updated_detail, result.summary));
+                            }
+                        }
+
+                        String finishStatus;
+                        if (result.exitCode == 0 && "up-to-date".equals(result.summary)) {
+                            finishStatus = getString(R.string.status_db_up_to_date);
+                        } else if (result.exitCode == 0 && !TextUtils.isEmpty(result.summary)
+                                && !"updated".equals(result.summary)
+                                && !"ok".equals(result.summary)) {
+                            finishStatus = getString(R.string.status_db_updated_detail, result.summary);
+                        } else if (result.exitCode == 0) {
+                            finishStatus = getString(R.string.status_db_updated);
+                        } else {
+                            finishStatus = getString(R.string.status_db_update_failed, result.exitCode);
+                        }
+                        setBusy(false, finishStatus, false);
+                        updateDashboardFromState();
+                    }
+                });
+            }
+        });
+    }
+
+    private void startPlannedScan(final String modeLabel,
+                                  final String planningStatus,
+                                  final String scanningStatus,
+                                  final String targetPath,
+                                  final boolean includeInstalledApks,
+                                  final long modifiedAfter,
+                                  final boolean enableBackgroundMonitor) {
+        if (TextUtils.isEmpty(textOf(clamscanPathView)) || TextUtils.isEmpty(textOf(databasePathView))) {
+            toast(getString(R.string.missing_path_message));
+            return;
+        }
+
+        setBusy(true, planningStatus, true);
+        setProgressPresentation(modeLabel, getString(R.string.progress_percent_waiting), getString(R.string.progress_planning), true);
+        appendLog(planningStatus);
+        uniqueThreats.clear();
+        threats.clear();
+        renderThreats();
+
+        executor.execute(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    RuntimeAssetsManager.ensureInstalled(MainActivity.this);
+                } catch (IOException e) {
+                    final String message = e.getMessage();
+                    mainHandler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            setBusy(false, getString(R.string.status_runtime_error), false);
+                            appendLog(getString(R.string.runtime_prepare_failed_prefix) + message);
+                            updateDashboardFromState();
+                        }
+                    });
+                    return;
+                }
+
+                final ScanPlanner.ScanPlan plan = ScanPlanner.buildPlan(
+                        MainActivity.this,
+                        targetPath,
+                        includeInstalledApks,
+                        modifiedAfter
+                );
+
+                mainHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (plan.items.isEmpty()) {
+                            scanProgressPercentView.setText(getString(R.string.progress_percent_done));
+                            scanProgressDetailsView.setText(getString(R.string.progress_no_files));
+                            setBusy(false, getString(R.string.status_scan_no_files), false);
+                            updateDashboardFromState();
+                            return;
+                        }
+
+                        statusTextView.setText(scanningStatus);
+                        scanProgressView.setIndeterminate(false);
+                        scanProgressView.setMax(1000);
+                        updateScanProgress(modeLabel, 0L, plan.totalBytes, 0, plan.items.size(), null);
+                    }
+                });
+
+                if (plan.items.isEmpty()) {
+                    return;
+                }
+
+                final ClamScanner.Result result = ClamScanner.scanPlan(
+                        MainActivity.this,
+                        textOf(clamscanPathView),
+                        textOf(databasePathView),
+                        plan,
+                        getIgnoredThreats(),
+                        new ClamScanner.ProgressCallback() {
+                            @Override
+                            public void onLog(final String line) {
+                                mainHandler.post(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        appendLog(line);
+                                    }
+                                });
+                            }
+
+                            @Override
+                            public void onProgress(final long scannedBytes,
+                                                   final long totalBytes,
+                                                   final int scannedFiles,
+                                                   final int totalFiles,
+                                                   final ScanPlanner.ScanItem currentItem) {
+                                mainHandler.post(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        updateScanProgress(modeLabel, scannedBytes, totalBytes, scannedFiles, totalFiles, currentItem);
+                                    }
+                                });
+                            }
+                        });
+
+                mainHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        uniqueThreats.clear();
+                        uniqueThreats.addAll(result.threats);
+                        threats.clear();
+                        threats.addAll(uniqueThreats);
+                        renderThreats();
+
+                        boolean scanCompleted = result.exitCode == 0 || result.exitCode == 1;
+                        if (scanCompleted) {
+                            saveLastScanState(threats.isEmpty() ? "clean" : "threats", threats.size());
+                            if (enableBackgroundMonitor) {
+                                ProtectionScheduler.enableBackgroundMonitor(MainActivity.this, targetPath);
+                            }
+                        } else {
+                            saveLastScanState("error", 0);
+                        }
+
+                        updateScanProgress(modeLabel, result.scannedBytes, plan.totalBytes, result.scannedFiles, plan.items.size(), null);
+                        String finishStatus;
+                        if (scanCompleted) {
+                            finishStatus = threats.isEmpty()
+                                    ? getString(R.string.status_scan_complete_clean)
+                                    : getString(R.string.status_scan_complete_threats, threats.size());
+                        } else {
+                            finishStatus = getString(R.string.status_scan_complete_error, result.exitCode);
+                        }
+                        setBusy(false, finishStatus, false);
+                        updateDashboardFromState();
+                    }
+                });
+            }
+        });
+    }
+
+    private void showSelectiveScanDialog() {
+        final EditText input = new EditText(this);
+        input.setHint(getString(R.string.selective_scan_hint));
+        input.setText(textOf(targetPathView));
+        input.setSelection(input.getText().length());
+
+        new AlertDialog.Builder(this)
+                .setTitle(getString(R.string.selective_scan_dialog_title))
+                .setMessage(getString(R.string.selective_scan_dialog_message))
+                .setView(input)
+                .setPositiveButton(getString(R.string.selective_scan_dialog_start), (dialog, which) -> {
+                    String selectedPath = input.getText().toString().trim();
+                    if (TextUtils.isEmpty(selectedPath)) {
+                        toast(getString(R.string.selective_scan_missing_path));
+                        return;
+                    }
+                    targetPathView.setText(selectedPath);
+                    savePreferences();
+                    startPlannedScan(
+                            getString(R.string.scan_mode_selective),
+                            getString(R.string.status_planning_selective_scan),
+                            getString(R.string.status_selective_scanning),
+                            selectedPath,
+                            false,
+                            0L,
+                            false
+                    );
+                })
+                .setNegativeButton(getString(R.string.action_cancel), null)
+                .show();
+    }
+
+    private void runShellTask(final String status,
+                              final String command,
+                              final boolean parseThreats,
+                              final boolean clearThreatsFirst,
+                              final Runnable onSuccess) {
         if (TextUtils.isEmpty(command)) {
             toast(getString(R.string.missing_path_message));
             return;
         }
 
         final boolean environmentCheck = command.equals(buildEnvironmentCheckCommand());
-        final boolean databaseUpdate = command.equals(buildFreshclamCommand());
-
-        setBusy(true, status);
+        setBusy(true, status, false);
+        setProgressPresentation(
+                environmentCheck ? getString(R.string.scan_mode_ready) : getString(R.string.scan_mode_maintenance),
+                getString(R.string.progress_percent_waiting),
+                status,
+                true
+        );
         appendLog("$ " + command);
 
         if (clearThreatsFirst) {
@@ -410,6 +724,7 @@ public class MainActivity extends Activity {
                             @Override
                             public void run() {
                                 appendLog(emittedLine);
+                                scanProgressDetailsView.setText(emittedLine);
                             }
                         });
                     }
@@ -430,45 +745,25 @@ public class MainActivity extends Activity {
                 mainHandler.post(new Runnable() {
                     @Override
                     public void run() {
-                        boolean scanCompleted = finalExitCode == 0 || finalExitCode == 1;
                         if (parseThreats) {
                             threats.clear();
                             threats.addAll(uniqueThreats);
                             renderThreats();
-                            if (scanCompleted) {
-                                saveLastScanState(threats.isEmpty() ? "clean" : "threats", threats.size());
-                            } else {
-                                saveLastScanState("error", 0);
-                            }
                         } else if (environmentCheck) {
                             parseEnvironmentOutput(finalOutput);
-                        } else if (databaseUpdate && finalExitCode == 0) {
-                            databaseReady = true;
-                            databaseStatusValueView.setText(getString(R.string.value_ready));
-                            ProtectionScheduler.markDatabaseUpdated(MainActivity.this);
                         }
 
                         String finishStatus;
-                        if (parseThreats) {
-                            if (scanCompleted) {
-                                finishStatus = threats.isEmpty()
-                                        ? getString(R.string.status_scan_complete_clean)
-                                        : getString(R.string.status_scan_complete_threats, threats.size());
-                            } else {
-                                finishStatus = getString(R.string.status_scan_complete_error, finalExitCode);
-                            }
-                        } else if (environmentCheck) {
+                        if (environmentCheck) {
                             finishStatus = (moduleReady && databaseReady)
                                     ? getString(R.string.status_check_complete_ready)
                                     : getString(R.string.status_check_complete_problem);
-                        } else if (databaseUpdate) {
-                            finishStatus = finalExitCode == 0
-                                    ? getString(R.string.status_db_updated)
-                                    : getString(R.string.status_db_update_failed, finalExitCode);
                         } else {
-                            finishStatus = getString(R.string.status_done, finalExitCode);
+                            finishStatus = finalExitCode == 0
+                                    ? getString(R.string.status_done_simple)
+                                    : getString(R.string.status_done, finalExitCode);
                         }
-                        setBusy(false, finishStatus);
+                        setBusy(false, finishStatus, false);
                         updateDashboardFromState();
 
                         if (finalExitCode == 0 && onSuccess != null) {
@@ -503,6 +798,7 @@ public class MainActivity extends Activity {
         rootStatusValueView.setText(rootReady ? getString(R.string.value_ready) : rootStatusValueView.getText());
         moduleStatusValueView.setText(moduleReady ? getString(R.string.value_ready) : moduleStatusValueView.getText());
         databaseStatusValueView.setText(databaseReady ? getString(R.string.value_ready) : databaseStatusValueView.getText());
+        updateBackgroundMonitorState();
 
         boolean hasLiveThreats = !threats.isEmpty();
         boolean hasThreatHistory = "threats".equals(lastScanResult) && lastThreatCount > 0;
@@ -566,7 +862,9 @@ public class MainActivity extends Activity {
             protectionChipView.setText(getString(R.string.chip_safe));
             threatCardView.setBackgroundResource(R.drawable.card_surface);
             threatHeadlineView.setText(getString(R.string.summary_no_threats));
-            threatMessageView.setText(getString(R.string.quick_scan_target_label));
+            threatMessageView.setText(ProtectionScheduler.isBackgroundMonitorEnabled(this)
+                    ? getString(R.string.background_monitor_active_message)
+                    : getString(R.string.quick_scan_target_label));
         }
         updateActionAvailability();
     }
@@ -629,6 +927,7 @@ public class MainActivity extends Activity {
                         runShellTask(getString(R.string.status_quarantine), buildQuarantineCommand(threatPath, destination), false, false, new Runnable() {
                             @Override
                             public void run() {
+                                QuarantineManager.addItem(MainActivity.this, threatPath, destination, "Threat detected");
                                 uniqueThreats.remove(threatPath);
                                 threats.remove(threatPath);
                                 renderThreats();
@@ -670,26 +969,6 @@ public class MainActivity extends Activity {
                 + "([ -f " + shellQuote(database + "/daily.cvd") + " ] && echo CG_DAILY=1 || echo CG_DAILY=0)";
     }
 
-    private String buildFreshclamCommand() {
-        String freshclam = textOf(freshclamPathView);
-        String database = textOf(databasePathView);
-        if (TextUtils.isEmpty(freshclam) || TextUtils.isEmpty(database)) {
-            return "";
-        }
-        return buildRuntimeEnvPrefix()
-                + shellQuote(freshclam)
-                + " --stdout --datadir=" + shellQuote(database)
-                + " --config-file=" + shellQuote(RuntimeAssetsManager.getFreshclamConfigPath(this));
-    }
-
-    private String buildScanCommand(String targetPath) {
-        List<String> targets = collectScanTargets(targetPath);
-        if (targets.isEmpty()) {
-            return "";
-        }
-        return buildMultiTargetScanCommand(targets);
-    }
-
     private String buildQuarantineCommand(String sourcePath, String destinationPath) {
         String quarantineDir = textOf(quarantinePathView);
         return "mkdir -p " + shellQuote(quarantineDir)
@@ -707,96 +986,20 @@ public class MainActivity extends Activity {
         return quarantineDir + "/" + timestamp + "-" + baseName;
     }
 
-    private List<String> collectScanTargets(String primaryTarget) {
-        LinkedHashSet<String> targets = new LinkedHashSet<String>();
-        if (!TextUtils.isEmpty(primaryTarget)) {
-            File primary = new File(primaryTarget);
-            if (primary.exists()) {
-                targets.add(primary.getAbsolutePath());
-            }
-        }
-
-        PackageManager packageManager = getPackageManager();
-        List<ApplicationInfo> apps = packageManager.getInstalledApplications(PackageManager.GET_META_DATA);
-        for (ApplicationInfo app : apps) {
-            if (app == null || getPackageName().equals(app.packageName)) {
-                continue;
-            }
-            String source = !TextUtils.isEmpty(app.publicSourceDir) ? app.publicSourceDir : app.sourceDir;
-            if (TextUtils.isEmpty(source)) {
-                continue;
-            }
-            File apk = new File(source);
-            if (apk.exists() && apk.canRead()) {
-                targets.add(apk.getAbsolutePath());
-            }
-        }
-        return new ArrayList<String>(targets);
-    }
-
-    private String buildMultiTargetScanCommand(List<String> targets) {
-        String clamscan = textOf(clamscanPathView);
-        String database = textOf(databasePathView);
-        if (TextUtils.isEmpty(clamscan) || TextUtils.isEmpty(database) || targets.isEmpty()) {
-            return "";
-        }
-
-        File targetsFile = new File(getFilesDir(), SCAN_TARGETS_FILE);
-        OutputStreamWriter writer = null;
-        try {
-            writer = new OutputStreamWriter(new java.io.FileOutputStream(targetsFile), "UTF-8");
-            for (String target : targets) {
-                writer.write(target);
-                writer.write('\n');
-            }
-        } catch (IOException e) {
-            appendLog(getString(R.string.scan_targets_failed_prefix) + e.getMessage());
-            return "";
-        } finally {
-            if (writer != null) {
-                try {
-                    writer.close();
-                } catch (IOException ignored) {
-                }
-            }
-        }
-
-        return "result=0; "
-                + "while IFS= read -r target; do "
-                + "[ -e \"$target\" ] || continue; "
-                + buildRuntimeEnvPrefix()
-                + shellQuote(clamscan)
-                + " -r --infected --suppress-ok-results --database=" + shellQuote(database)
-                + " \"$target\"; "
-                + "code=$?; "
-                + "if [ \"$code\" -gt \"$result\" ]; then result=\"$code\"; fi; "
-                + "done < " + shellQuote(targetsFile.getAbsolutePath()) + "; "
-                + "exit \"$result\"";
-    }
-
-    private String buildRuntimeEnvPrefix() {
-        String runtimeRoot = RuntimeAssetsManager.getRuntimeRoot(this);
-        String nativeLibDir = getApplicationInfo().nativeLibraryDir;
-        String certFile = runtimeRoot + "/usr/etc/tls/cert.pem";
-        String opensslConf = runtimeRoot + "/usr/etc/tls/openssl.cnf";
-        return "LD_LIBRARY_PATH=" + shellQuote(nativeLibDir) + " "
-                + "HOME=" + shellQuote(runtimeRoot) + " "
-                + "SSL_CERT_FILE=" + shellQuote(certFile) + " "
-                + "OPENSSL_CONF=" + shellQuote(opensslConf) + " ";
-    }
-
-    private void setBusy(boolean busy, String status) {
+    private void setBusy(boolean busy, String status, boolean showRadar) {
         this.busy = busy;
-        saveButton.setEnabled(!busy);
-        resetDefaultsButton.setEnabled(!busy);
-        checkButton.setEnabled(!busy);
-        toggleSettingsButton.setEnabled(!busy);
+        applyButtonEnabledState(saveButton, !busy);
+        applyButtonEnabledState(resetDefaultsButton, !busy);
+        applyButtonEnabledState(checkButton, !busy);
+        applyButtonEnabledState(toggleSettingsButton, !busy);
         statusTextView.setText(status);
         scanProgressView.setVisibility(busy ? View.VISIBLE : View.GONE);
+        radarView.setActive(showRadar && busy);
         if (busy) {
-            updateDbButton.setEnabled(false);
-            quickScanButton.setEnabled(false);
-            fullScanButton.setEnabled(false);
+            applyButtonEnabledState(updateDbButton, false);
+            applyButtonEnabledState(quickScanButton, false);
+            applyButtonEnabledState(fullScanButton, false);
+            applyButtonEnabledState(selectiveScanButton, false);
         } else {
             updateActionAvailability();
         }
@@ -805,9 +1008,112 @@ public class MainActivity extends Activity {
     private void updateActionAvailability() {
         checkButton.setText(getString(R.string.check_button));
         boolean engineReady = moduleReady;
-        updateDbButton.setEnabled(engineReady);
-        quickScanButton.setEnabled(engineReady && databaseReady);
-        fullScanButton.setEnabled(engineReady && databaseReady);
+        applyButtonEnabledState(updateDbButton, engineReady);
+        applyButtonEnabledState(quickScanButton, engineReady && databaseReady);
+        applyButtonEnabledState(fullScanButton, engineReady && databaseReady);
+        applyButtonEnabledState(selectiveScanButton, engineReady && databaseReady);
+    }
+
+    private void applyButtonEnabledState(Button button, boolean enabled) {
+        if (button == null) {
+            return;
+        }
+        button.setEnabled(enabled);
+        button.setAlpha(enabled ? 1f : 0.42f);
+    }
+
+    private void updateScanProgress(String modeLabel,
+                                    long scannedBytes,
+                                    long totalBytes,
+                                    int scannedFiles,
+                                    int totalFiles,
+                                    ScanPlanner.ScanItem currentItem) {
+        setProgressPresentation(
+                modeLabel,
+                formatPercent(scannedBytes, totalBytes),
+                buildProgressDetails(scannedBytes, totalBytes, scannedFiles, totalFiles, currentItem),
+                false
+        );
+        if (totalBytes <= 0L) {
+            scanProgressView.setProgress(0);
+            return;
+        }
+        int progress = (int) Math.min(1000L, (scannedBytes * 1000L) / totalBytes);
+        scanProgressView.setProgress(progress);
+    }
+
+    private void setProgressPresentation(String modeLabel, String percentLabel, String detail, boolean indeterminate) {
+        scanModeView.setText(modeLabel);
+        scanProgressPercentView.setText(percentLabel);
+        scanProgressDetailsView.setText(detail);
+        scanProgressView.setIndeterminate(indeterminate);
+        if (!indeterminate) {
+            scanProgressView.setMax(1000);
+        }
+    }
+
+    private String buildProgressDetails(long scannedBytes,
+                                        long totalBytes,
+                                        int scannedFiles,
+                                        int totalFiles,
+                                        ScanPlanner.ScanItem currentItem) {
+        StringBuilder builder = new StringBuilder();
+        builder.append(formatBytes(scannedBytes))
+                .append(" / ")
+                .append(formatBytes(totalBytes))
+                .append(" · ")
+                .append(scannedFiles)
+                .append(" / ")
+                .append(totalFiles)
+                .append(" ")
+                .append(getString(R.string.progress_files_label));
+        if (currentItem != null && !TextUtils.isEmpty(currentItem.path)) {
+            builder.append("\n").append(shortenPath(currentItem.path));
+        }
+        return builder.toString();
+    }
+
+    private void updateBackgroundMonitorState() {
+        if (ProtectionScheduler.isBackgroundMonitorEnabled(this)) {
+            backgroundMonitorView.setText(
+                    getString(
+                            R.string.background_monitor_enabled,
+                            shortenPath(ProtectionScheduler.getBackgroundMonitorTarget(this))
+                    )
+            );
+        } else {
+            backgroundMonitorView.setText(getString(R.string.background_monitor_disabled));
+        }
+    }
+
+    private String formatPercent(long scannedBytes, long totalBytes) {
+        if (totalBytes <= 0L) {
+            return getString(R.string.progress_percent_waiting);
+        }
+        long percent = Math.min(100L, (scannedBytes * 100L) / totalBytes);
+        return percent + "%";
+    }
+
+    private String formatBytes(long value) {
+        if (value <= 0L) {
+            return "0 B";
+        }
+        double size = (double) value;
+        String[] units = new String[] {"B", "KB", "MB", "GB", "TB"};
+        int unitIndex = 0;
+        while (size >= 1024d && unitIndex < units.length - 1) {
+            size /= 1024d;
+            unitIndex++;
+        }
+        DecimalFormat format = size >= 100d || unitIndex == 0 ? new DecimalFormat("0") : new DecimalFormat("0.0");
+        return format.format(size) + " " + units[unitIndex];
+    }
+
+    private String shortenPath(String path) {
+        if (TextUtils.isEmpty(path) || path.length() <= 54) {
+            return path;
+        }
+        return path.substring(0, 24) + "..." + path.substring(path.length() - 24);
     }
 
     private int dp(int value) {

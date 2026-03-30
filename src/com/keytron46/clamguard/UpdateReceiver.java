@@ -7,7 +7,12 @@ import android.content.Intent;
 public class UpdateReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(final Context context, Intent intent) {
-        if (intent == null || !ProtectionScheduler.ACTION_DAILY_UPDATE.equals(intent.getAction())) {
+        if (intent == null) {
+            return;
+        }
+        final String action = intent.getAction();
+        if (!ProtectionScheduler.ACTION_DAILY_UPDATE.equals(action)
+                && !ProtectionScheduler.ACTION_BACKGROUND_SCAN.equals(action)) {
             return;
         }
 
@@ -16,11 +21,15 @@ public class UpdateReceiver extends BroadcastReceiver {
             @Override
             public void run() {
                 try {
-                    ProtectionScheduler.runAutoUpdateIfDue(context);
+                    if (ProtectionScheduler.ACTION_DAILY_UPDATE.equals(action)) {
+                        ProtectionScheduler.runAutoUpdateIfDue(context);
+                    } else if (ProtectionScheduler.ACTION_BACKGROUND_SCAN.equals(action)) {
+                        ProtectionScheduler.runBackgroundScanIfDue(context);
+                    }
                 } finally {
                     pendingResult.finish();
                 }
             }
-        }, "clamguard-auto-update").start();
+        }, "clamguard-background-work").start();
     }
 }

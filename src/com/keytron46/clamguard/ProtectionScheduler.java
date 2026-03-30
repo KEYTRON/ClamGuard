@@ -10,6 +10,10 @@ import android.net.NetworkInfo;
 import android.text.TextUtils;
 
 import java.io.File;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.HashSet;
+import java.util.Locale;
 
 public final class ProtectionScheduler {
     public static final String PREFS_NAME = "clamguard_prefs";
@@ -17,9 +21,18 @@ public final class ProtectionScheduler {
     public static final String KEY_DATABASE = "database_path";
     public static final String KEY_AUTO_UPDATE = "auto_update_enabled";
     public static final String KEY_LAST_DB_UPDATE = "last_db_update";
+    public static final String KEY_BACKGROUND_MONITOR_ENABLED = "background_monitor_enabled";
+    public static final String KEY_BACKGROUND_MONITOR_TARGET = "background_monitor_target";
+    public static final String KEY_BACKGROUND_MONITOR_SINCE = "background_monitor_since";
+    public static final String KEY_LAST_BACKGROUND_SCAN = "last_background_scan";
+    public static final String KEY_LAST_SCAN = "last_scan";
+    public static final String KEY_LAST_SCAN_RESULT = "last_scan_result";
+    public static final String KEY_LAST_THREAT_COUNT = "last_threat_count";
     public static final String ACTION_DAILY_UPDATE = "com.keytron46.clamguard.action.DAILY_UPDATE";
+    public static final String ACTION_BACKGROUND_SCAN = "com.keytron46.clamguard.action.BACKGROUND_SCAN";
 
     private static final long UPDATE_INTERVAL_MS = 24L * 60L * 60L * 1000L;
+    private static final long BACKGROUND_SCAN_INTERVAL_MS = 3L * 60L * 60L * 1000L;
 
     private ProtectionScheduler() {
     }
@@ -32,19 +45,22 @@ public final class ProtectionScheduler {
             return;
         }
 
-        PendingIntent pendingIntent = buildPendingIntent(context);
-        alarmManager.cancel(pendingIntent);
+        PendingIntent updatePendingIntent = buildUpdatePendingIntent(context);
+        PendingIntent backgroundPendingIntent = buildBackgroundPendingIntent(context);
+        alarmManager.cancel(updatePendingIntent);
+        alarmManager.cancel(backgroundPendingIntent);
         if (!enabled) {
-            return;
+            scheduleBackgroundScan(context, alarmManager, backgroundPendingIntent);
+        } else {
+            long triggerAt = System.currentTimeMillis() + (30L * 60L * 1000L);
+            alarmManager.setInexactRepeating(
+                    AlarmManager.RTC_WAKEUP,
+                    triggerAt,
+                    UPDATE_INTERVAL_MS,
+                    updatePendingIntent
+            );
         }
-
-        long triggerAt = System.currentTimeMillis() + (30L * 60L * 1000L);
-        alarmManager.setInexactRepeating(
-                AlarmManager.RTC_WAKEUP,
-                triggerAt,
-                UPDATE_INTERVAL_MS,
-                pendingIntent
-        );
+        scheduleBackgroundScan(context, alarmManager, backgroundPendingIntent);
     }
 
     public static void markDatabaseUpdated(Context context) {
@@ -52,6 +68,28 @@ public final class ProtectionScheduler {
                 .edit()
                 .putLong(KEY_LAST_DB_UPDATE, System.currentTimeMillis())
                 .apply();
+    }
+
+    public static void enableBackgroundMonitor(Context context, String targetPath) {
+        long now = System.currentTimeMillis();
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(KEY_BACKGROUND_MONITOR_ENABLED, true)
+                .putString(KEY_BACKGROUND_MONITOR_TARGET, targetPath)
+                .putLong(KEY_BACKGROUND_MONITOR_SINCE, now)
+                .putLong(KEY_LAST_BACKGROUND_SCAN, 0L)
+                .apply();
+        sync(context);
+    }
+
+    public static boolean isBackgroundMonitorEnabled(Context context) {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getBoolean(KEY_BACKGROUND_MONITOR_ENABLED, false);
+    }
+
+    public static String getBackgroundMonitorTarget(Context context) {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getString(KEY_BACKGROUND_MONITOR_TARGET, "");
     }
 
     public static void runAutoUpdateIfDue(Context context) {
@@ -111,7 +149,66 @@ public final class ProtectionScheduler {
         }
     }
 
-    private static PendingIntent buildPendingIntent(Context context) {
+    public static void runBackgroundScanIfDue(Context context) {
+        Context appContext = context.getApplicationContext();
+        SharedPreferences prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        if (!prefs.getBoolean(KEY_BACKGROUND_MONITOR_ENABLED, false)) {
+            return;
+        }
+
+        long lastBackgroundScan = prefs.getLong(KEY_LAST_BACKGROUND_SCAN, 0L);
+        if (lastBackgroundScan > 0L && System.currentTimeMillis() - lastBackgroundScan < BACKGROUND_SCAN_INTERVAL_MS) {
+            return;
+        }
+
+        String target = prefs.getString(KEY_BACKGROUND_MONITOR_TARGET, "/sdcard");
+        long modifiedAfter = prefs.getLong(KEY_BACKGROUND_MONITOR_SINCE, 0L);
+        if (TextUtils.isEmpty(target)) {
+            return;
+        }
+
+        try {
+            RuntimeAssetsManager.ensureInstalled(appContext);
+        } catch (Exception ignored) {
+            return;
+        }
+
+        String clamscan = prefs.getString("clamscan_path", RuntimeAssetsManager.getClamscanPath(appContext));
+        String database = prefs.getString(KEY_DATABASE, RuntimeAssetsManager.getDatabasePath(appContext));
+        if (TextUtils.isEmpty(clamscan) || TextUtils.isEmpty(database)) {
+            return;
+        }
+        if (!new File(clamscan).exists() || !new File(database).exists()) {
+            return;
+        }
+
+        ScanPlanner.ScanPlan plan = ScanPlanner.buildPlan(appContext, target, true, modifiedAfter);
+        long now = System.currentTimeMillis();
+        if (plan.items.isEmpty()) {
+            prefs.edit()
+                    .putLong(KEY_BACKGROUND_MONITOR_SINCE, now)
+                    .putLong(KEY_LAST_BACKGROUND_SCAN, now)
+                    .apply();
+            return;
+        }
+
+        HashSet<String> ignoredThreats = new HashSet<String>(
+                prefs.getStringSet("ignored_threats", new HashSet<String>())
+        );
+        ClamScanner.Result result = ClamScanner.scanPlan(appContext, clamscan, database, plan, ignoredThreats, null);
+
+        SharedPreferences.Editor editor = prefs.edit();
+        if (result.exitCode <= 1) {
+            editor.putLong(KEY_BACKGROUND_MONITOR_SINCE, now);
+            editor.putLong(KEY_LAST_BACKGROUND_SCAN, now);
+            editor.putString(KEY_LAST_SCAN, new SimpleDateFormat("dd.MM HH:mm", Locale.US).format(new Date(now)));
+            editor.putString(KEY_LAST_SCAN_RESULT, result.threats.isEmpty() ? "clean" : "threats");
+            editor.putInt(KEY_LAST_THREAT_COUNT, result.threats.size());
+        }
+        editor.apply();
+    }
+
+    private static PendingIntent buildUpdatePendingIntent(Context context) {
         Intent intent = new Intent(context, UpdateReceiver.class);
         intent.setAction(ACTION_DAILY_UPDATE);
         return PendingIntent.getBroadcast(
@@ -119,6 +216,31 @@ public final class ProtectionScheduler {
                 1001,
                 intent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
+    }
+
+    private static PendingIntent buildBackgroundPendingIntent(Context context) {
+        Intent intent = new Intent(context, UpdateReceiver.class);
+        intent.setAction(ACTION_BACKGROUND_SCAN);
+        return PendingIntent.getBroadcast(
+                context,
+                1002,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
+    }
+
+    private static void scheduleBackgroundScan(Context context, AlarmManager alarmManager, PendingIntent pendingIntent) {
+        SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        if (!prefs.getBoolean(KEY_BACKGROUND_MONITOR_ENABLED, false)) {
+            return;
+        }
+        long triggerAt = System.currentTimeMillis() + (20L * 60L * 1000L);
+        alarmManager.setInexactRepeating(
+                AlarmManager.RTC_WAKEUP,
+                triggerAt,
+                BACKGROUND_SCAN_INTERVAL_MS,
+                pendingIntent
         );
     }
 

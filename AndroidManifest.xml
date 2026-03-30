@@ -32,6 +32,10 @@
         </activity>
 
         <activity
+            android:name=".QuarantineActivity"
+            android:label="@string/action_quarantine" />
+
+        <activity
             android:name=".SettingsActivity"
             android:exported="false"
             android:label="@string/settings_screen_title" />
@@ -63,6 +67,17 @@
             android:name=".UpdateReceiver"
             android:enabled="true"
             android:exported="true" />
+
+        <receiver
+            android:name=".AppInstallReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.PACKAGE_ADDED" />
+                <action android:name="android.intent.action.PACKAGE_REPLACED" />
+                <data android:scheme="package" />
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>

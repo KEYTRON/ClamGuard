@@ -38,7 +38,7 @@ public final class RuntimeAssetsManager {
     }
 
     public static String getQuarantinePath(Context context) {
-        return "/sdcard/ClamGuard/quarantine";
+        return new File(context.getFilesDir(), "quarantine").getAbsolutePath();
     }
 
     public static void ensureInstalled(Context context) throws IOException {

@@ -89,6 +89,15 @@ public class SettingsActivity extends Activity {
 
     private void wireButtons() {
         Button backButton = (Button) findViewById(R.id.settings_back_button);
+        Button quarantineBtn = (Button) findViewById(R.id.settings_quarantine_button);
+        if (quarantineBtn != null) {
+            quarantineBtn.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    startActivity(new Intent(SettingsActivity.this, QuarantineActivity.class));
+                }
+            });
+        }
         Button saveButton = (Button) findViewById(R.id.settings_save_button);
         Button resetButton = (Button) findViewById(R.id.settings_reset_button);
         Button clearIgnoredButton = (Button) findViewById(R.id.settings_clear_ignored_button);
