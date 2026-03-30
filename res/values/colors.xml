@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="app_bg_start">#F7F3F2</color>
+    <color name="app_bg_end">#FBF8F7</color>
+    <color name="surface">#FFFFFF</color>
+    <color name="surface_stroke">#E7DFDB</color>
+    <color name="surface_tile">#F8F5F4</color>
+    <color name="surface_alert">#FFF7F7</color>
+    <color name="surface_alert_stroke">#EDC4C6</color>
+    <color name="text_primary">#18344A</color>
+    <color name="text_secondary">#193246</color>
+    <color name="text_muted">#6B8293</color>
+    <color name="text_soft">#536A7B</color>
+    <color name="text_on_dark">#FFFFFF</color>
+    <color name="text_on_dark_soft">#F1E7E3</color>
+    <color name="text_on_dark_kicker">#F3B3B5</color>
+    <color name="accent">#B83033</color>
+    <color name="accent_strong">#EF3E42</color>
+    <color name="accent_border_soft">#E7C5C6</color>
+    <color name="hero_start">#141414</color>
+    <color name="hero_end">#2D1819</color>
+    <color name="pill_pending">#F5E7E7</color>
+    <color name="pill_safe">#DDEED8</color>
+    <color name="pill_warning">#F7D2D3</color>
+    <color name="chip_text">#18344A</color>
+    <color name="button_primary_text">#FFFFFF</color>
+    <color name="icon_bg">#1A1A1A</color>
+    <color name="icon_fg">#FFFFFF</color>
+    <color name="icon_accent">#EF3E42</color>
+</resources>

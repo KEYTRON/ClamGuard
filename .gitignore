@@ -1,0 +1,10 @@
+build/
+*.apk
+*.ap_
+*.idsig
+*.keystore
+*.zip
+*.tar
+*.tar.gz
+*.log
+.DS_Store
