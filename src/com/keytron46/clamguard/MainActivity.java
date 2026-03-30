@@ -371,6 +371,9 @@ public class MainActivity extends Activity {
             return;
         }
 
+        final boolean environmentCheck = command.equals(buildEnvironmentCheckCommand());
+        final boolean databaseUpdate = command.equals(buildFreshclamCommand());
+
         setBusy(true, status);
         appendLog("$ " + command);
 
@@ -427,26 +430,44 @@ public class MainActivity extends Activity {
                 mainHandler.post(new Runnable() {
                     @Override
                     public void run() {
+                        boolean scanCompleted = finalExitCode == 0 || finalExitCode == 1;
                         if (parseThreats) {
                             threats.clear();
                             threats.addAll(uniqueThreats);
                             renderThreats();
-                            if (finalExitCode == 0) {
+                            if (scanCompleted) {
                                 saveLastScanState(threats.isEmpty() ? "clean" : "threats", threats.size());
                             } else {
                                 saveLastScanState("error", 0);
                             }
-                        } else if (command.equals(buildEnvironmentCheckCommand())) {
+                        } else if (environmentCheck) {
                             parseEnvironmentOutput(finalOutput);
-                        } else if (command.equals(buildFreshclamCommand()) && finalExitCode == 0) {
+                        } else if (databaseUpdate && finalExitCode == 0) {
                             databaseReady = true;
                             databaseStatusValueView.setText(getString(R.string.value_ready));
                             ProtectionScheduler.markDatabaseUpdated(MainActivity.this);
                         }
 
-                        String finishStatus = parseThreats
-                                ? getString(R.string.status_done_with_threats, finalExitCode, threats.size())
-                                : getString(R.string.status_done, finalExitCode);
+                        String finishStatus;
+                        if (parseThreats) {
+                            if (scanCompleted) {
+                                finishStatus = threats.isEmpty()
+                                        ? getString(R.string.status_scan_complete_clean)
+                                        : getString(R.string.status_scan_complete_threats, threats.size());
+                            } else {
+                                finishStatus = getString(R.string.status_scan_complete_error, finalExitCode);
+                            }
+                        } else if (environmentCheck) {
+                            finishStatus = (moduleReady && databaseReady)
+                                    ? getString(R.string.status_check_complete_ready)
+                                    : getString(R.string.status_check_complete_problem);
+                        } else if (databaseUpdate) {
+                            finishStatus = finalExitCode == 0
+                                    ? getString(R.string.status_db_updated)
+                                    : getString(R.string.status_db_update_failed, finalExitCode);
+                        } else {
+                            finishStatus = getString(R.string.status_done, finalExitCode);
+                        }
                         setBusy(false, finishStatus);
                         updateDashboardFromState();
 

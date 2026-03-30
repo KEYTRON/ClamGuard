@@ -36,11 +36,12 @@
     <string name="threat_message_default">Сделайте быструю или полную проверку. Мы покажем найденные угрозы здесь и дадим действие по каждой.</string>
     <string name="threat_headline_ready">Можно запускать проверку</string>
     <string name="threat_message_ready">Начните с быстрой проверки папки Загрузки, а затем при необходимости запустите полную проверку памяти устройства.</string>
-    <string name="check_button">Проверить защиту</string>
+    <string name="check_button">Проверить готовность</string>
     <string name="grant_root_button">Включить root</string>
     <string name="update_db_button">Обновить базы</string>
     <string name="quick_scan_button">Быстрая проверка</string>
     <string name="full_scan_button">Полная проверка</string>
+    <string name="check_button_hint">Эта кнопка не сканирует файлы. Она проверяет только готовность встроенного движка ClamAV, баз сигнатур и расширенного root-режима.</string>
     <string name="status_section_title">Состояние защиты</string>
     <string name="root_status_label">Root</string>
     <string name="module_status_label">Движок</string>
@@ -72,7 +73,7 @@
     <string name="status_requesting_root">Запрашиваю root-доступ...</string>
     <string name="status_preparing_engine">Подготавливаю встроенный движок ClamAV...</string>
     <string name="status_runtime_error">Не удалось подготовить встроенный движок.</string>
-    <string name="status_checking">Проверяю движок, базы и расширенный доступ...</string>
+    <string name="status_checking">Проверяю встроенный движок, базы и расширенный root-режим. Сканирование файлов сейчас не запускается.</string>
     <string name="status_updating_db">Обновляю сигнатуры ClamAV...</string>
     <string name="status_quick_scanning">Проверяю Загрузки и установленные APK...</string>
     <string name="status_scanning">Проверяю файлы устройства и установленные APK...</string>
@@ -80,6 +81,13 @@
     <string name="status_delete">Удаляю файл...</string>
     <string name="status_done">Готово. Код завершения %1$d</string>
     <string name="status_done_with_threats">Готово. Код %1$d. Угроз: %2$d</string>
+    <string name="status_check_complete_ready">Проверка готовности завершена. Движок и базы доступны, можно запускать сканирование.</string>
+    <string name="status_check_complete_problem">Проверка готовности завершена. Не всё готово: проверьте движок и базы.</string>
+    <string name="status_db_updated">Базы ClamAV обновлены.</string>
+    <string name="status_db_update_failed">Не удалось обновить базы. Код завершения %1$d</string>
+    <string name="status_scan_complete_clean">Проверка завершена. Угроз не найдено.</string>
+    <string name="status_scan_complete_threats">Проверка завершена. Найдены угрозы: %1$d</string>
+    <string name="status_scan_complete_error">Проверка завершилась с ошибкой. Код завершения %1$d</string>
     <string name="root_pending_message">Команда завершилась без вывода. Если вы включаете расширенный доступ, проверьте запрос в Magisk.</string>
     <string name="threat_dialog_title">Действие с угрозой</string>
     <string name="action_quarantine">В карантин</string>
