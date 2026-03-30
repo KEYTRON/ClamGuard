@@ -1,0 +1,6 @@
+id=clamguard
+name=ClamGuard Core
+version=@VERSION@
+versionCode=@VERSION_CODE@
+author=keytron46
+description=Magisk runtime for ClamGuard with arm64 ClamAV binaries, libraries and signature DB.

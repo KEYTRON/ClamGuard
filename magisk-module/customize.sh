@@ -1,0 +1,11 @@
+#!/system/bin/sh
+ui_print " "
+ui_print " ClamGuard Core"
+ui_print " "
+ui_print "Это Magisk-модуль для ClamGuard."
+ui_print "Он устанавливает root-side runtime и стабильные пути:"
+ui_print "  /data/adb/modules/clamguard/bin/clamscan"
+ui_print "  /data/adb/modules/clamguard/bin/freshclam"
+ui_print "  /data/adb/modules/clamguard/db"
+ui_print " "
+ui_print "Базы и arm64 runtime уже включены в zip."
