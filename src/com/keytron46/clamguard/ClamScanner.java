@@ -1,6 +1,7 @@
-package com.keytron46.clamguard;
+package com.keytron.clamguard;
 
 import android.content.Context;
+import android.util.Log;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -69,6 +70,7 @@ public final class ClamScanner {
         try {
             String command = buildRuntimeEnvPrefix(context)
                     + shellQuote(clamscanPath)
+                    + " --cvdcertsdir=" + shellQuote(RuntimeAssetsManager.getCertsPath(context))
                     + " --database=" + shellQuote(databasePath)
                     + " --file-list=" + shellQuote(listFile.getAbsolutePath());
             if (callback != null) {
@@ -76,7 +78,7 @@ public final class ClamScanner {
                 callback.onLog("$ " + command);
             }
 
-            process = new ProcessBuilder("/system/bin/sh", "-c", command)
+            process = ShellUtils.newRootProcess(command)
                     .redirectErrorStream(true)
                     .start();
 
@@ -115,10 +117,13 @@ public final class ClamScanner {
             }
 
             int exitCode = process.waitFor();
+            Log.w("ClamGuard", "clamscan exit code: " + exitCode);
+            if (callback != null) callback.onLog("[exit:" + exitCode + "]");
             if (exitCode > resultCode) {
                 resultCode = exitCode;
             }
         } catch (IOException e) {
+            Log.w("ClamGuard", "clamscan IO error: " + e.getMessage());
             if (callback != null) {
                 callback.onLog("IO error: " + e.getMessage());
             }

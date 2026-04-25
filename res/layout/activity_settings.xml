@@ -339,7 +339,9 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
                 android:hint="@string/hint_clamscan_path"
-                android:inputType="textNoSuggestions" />
+                android:inputType="textNoSuggestions"
+                android:textColor="@color/text_secondary"
+                android:textColorHint="@color/text_muted" />
 
             <EditText
                 android:id="@+id/settings_freshclam_path"
@@ -347,7 +349,9 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
                 android:hint="@string/hint_freshclam_path"
-                android:inputType="textNoSuggestions" />
+                android:inputType="textNoSuggestions"
+                android:textColor="@color/text_secondary"
+                android:textColorHint="@color/text_muted" />
 
             <EditText
                 android:id="@+id/settings_database_path"
@@ -355,7 +359,9 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
                 android:hint="@string/hint_database_path"
-                android:inputType="textNoSuggestions" />
+                android:inputType="textNoSuggestions"
+                android:textColor="@color/text_secondary"
+                android:textColorHint="@color/text_muted" />
 
             <EditText
                 android:id="@+id/settings_target_path"
@@ -363,7 +369,9 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
                 android:hint="@string/hint_target_path"
-                android:inputType="textNoSuggestions" />
+                android:inputType="textNoSuggestions"
+                android:textColor="@color/text_secondary"
+                android:textColorHint="@color/text_muted" />
 
             <EditText
                 android:id="@+id/settings_quarantine_path"
@@ -371,7 +379,9 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
                 android:hint="@string/hint_quarantine_path"
-                android:inputType="textNoSuggestions" />
+                android:inputType="textNoSuggestions"
+                android:textColor="@color/text_secondary"
+                android:textColorHint="@color/text_muted" />
 
             <CheckBox
                 android:id="@+id/settings_auto_update_checkbox"

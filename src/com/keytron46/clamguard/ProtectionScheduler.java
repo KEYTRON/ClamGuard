@@ -1,4 +1,4 @@
-package com.keytron46.clamguard;
+package com.keytron.clamguard;
 
 import android.app.AlarmManager;
 import android.app.PendingIntent;
@@ -8,6 +8,7 @@ import android.content.SharedPreferences;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.text.TextUtils;
+import android.util.Log;
 
 import java.io.File;
 import java.text.SimpleDateFormat;
@@ -25,11 +26,13 @@ public final class ProtectionScheduler {
     public static final String KEY_BACKGROUND_MONITOR_TARGET = "background_monitor_target";
     public static final String KEY_BACKGROUND_MONITOR_SINCE = "background_monitor_since";
     public static final String KEY_LAST_BACKGROUND_SCAN = "last_background_scan";
+    public static final String KEY_LAST_BACKGROUND_STATUS = "last_background_status";
+    public static final String KEY_LAST_BACKGROUND_STATUS_AT = "last_background_status_at";
     public static final String KEY_LAST_SCAN = "last_scan";
     public static final String KEY_LAST_SCAN_RESULT = "last_scan_result";
     public static final String KEY_LAST_THREAT_COUNT = "last_threat_count";
-    public static final String ACTION_DAILY_UPDATE = "com.keytron46.clamguard.action.DAILY_UPDATE";
-    public static final String ACTION_BACKGROUND_SCAN = "com.keytron46.clamguard.action.BACKGROUND_SCAN";
+    public static final String ACTION_DAILY_UPDATE = "com.keytron.clamguard.action.DAILY_UPDATE";
+    public static final String ACTION_BACKGROUND_SCAN = "com.keytron.clamguard.action.BACKGROUND_SCAN";
 
     private static final long UPDATE_INTERVAL_MS = 24L * 60L * 60L * 1000L;
     private static final long BACKGROUND_SCAN_INTERVAL_MS = 3L * 60L * 60L * 1000L;
@@ -92,39 +95,56 @@ public final class ProtectionScheduler {
                 .getString(KEY_BACKGROUND_MONITOR_TARGET, "");
     }
 
+    public static void recordBackgroundStatus(Context context, String status) {
+        Log.i("ClamGuard", status);
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putString(KEY_LAST_BACKGROUND_STATUS, status)
+                .putLong(KEY_LAST_BACKGROUND_STATUS_AT, System.currentTimeMillis())
+                .apply();
+    }
+
     public static void runAutoUpdateIfDue(Context context) {
         Context appContext = context.getApplicationContext();
         SharedPreferences prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         if (!prefs.getBoolean(KEY_AUTO_UPDATE, true)) {
+            recordBackgroundStatus(appContext, "Автообновление пропущено: выключено в настройках");
             return;
         }
         if (!isNetworkAvailable(appContext)) {
+            recordBackgroundStatus(appContext, "Автообновление пропущено: нет сети");
             return;
         }
 
         long lastUpdate = prefs.getLong(KEY_LAST_DB_UPDATE, 0L);
         if (lastUpdate > 0L && System.currentTimeMillis() - lastUpdate < UPDATE_INTERVAL_MS) {
+            recordBackgroundStatus(appContext, "Автообновление пропущено: базы уже проверялись недавно");
             return;
         }
 
         try {
             RuntimeAssetsManager.ensureInstalled(appContext);
         } catch (Exception ignored) {
+            recordBackgroundStatus(appContext, "Автообновление не запущено: runtime не подготовлен");
             return;
         }
 
         String freshclam = prefs.getString(KEY_FRESHCLAM, RuntimeAssetsManager.getFreshclamPath(appContext));
         String database = prefs.getString(KEY_DATABASE, RuntimeAssetsManager.getDatabasePath(appContext));
         if (TextUtils.isEmpty(freshclam) || TextUtils.isEmpty(database)) {
+            recordBackgroundStatus(appContext, "Автообновление не запущено: пустой путь freshclam или баз");
             return;
         }
         if (!new File(freshclam).exists()) {
+            recordBackgroundStatus(appContext, "Автообновление не запущено: freshclam не найден");
             return;
         }
 
         String command = shellQuote(freshclam)
+                + " --user root"
                 + " --stdout --datadir=" + shellQuote(database)
-                + " --config-file=" + shellQuote(RuntimeAssetsManager.getFreshclamConfigPath(appContext));
+                + " --config-file=" + shellQuote(RuntimeAssetsManager.getFreshclamConfigPath(appContext))
+                + " --cvdcertsdir=" + shellQuote(RuntimeAssetsManager.getCertsPath(appContext));
         String runtimeRoot = RuntimeAssetsManager.getRuntimeRoot(appContext);
         String nativeLibDir = appContext.getApplicationInfo().nativeLibraryDir;
         command = "LD_LIBRARY_PATH=" + shellQuote(nativeLibDir) + " "
@@ -140,8 +160,12 @@ public final class ProtectionScheduler {
             int exitCode = process.waitFor();
             if (exitCode == 0) {
                 markDatabaseUpdated(appContext);
+                recordBackgroundStatus(appContext, "Автообновление завершено успешно");
+            } else {
+                recordBackgroundStatus(appContext, "Автообновление завершилось с кодом " + exitCode);
             }
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            recordBackgroundStatus(appContext, "Автообновление упало: " + e.getClass().getSimpleName() + ": " + e.getMessage());
         } finally {
             if (process != null) {
                 process.destroy();
@@ -153,35 +177,42 @@ public final class ProtectionScheduler {
         Context appContext = context.getApplicationContext();
         SharedPreferences prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         if (!prefs.getBoolean(KEY_BACKGROUND_MONITOR_ENABLED, false)) {
+            recordBackgroundStatus(appContext, "Фоновая проверка пропущена: режим выключен");
             return;
         }
 
         long lastBackgroundScan = prefs.getLong(KEY_LAST_BACKGROUND_SCAN, 0L);
         if (lastBackgroundScan > 0L && System.currentTimeMillis() - lastBackgroundScan < BACKGROUND_SCAN_INTERVAL_MS) {
+            recordBackgroundStatus(appContext, "Фоновая проверка пропущена: интервал ещё не истёк");
             return;
         }
 
         String target = prefs.getString(KEY_BACKGROUND_MONITOR_TARGET, "/sdcard");
         long modifiedAfter = prefs.getLong(KEY_BACKGROUND_MONITOR_SINCE, 0L);
         if (TextUtils.isEmpty(target)) {
+            recordBackgroundStatus(appContext, "Фоновая проверка не запущена: пустой целевой путь");
             return;
         }
 
         try {
             RuntimeAssetsManager.ensureInstalled(appContext);
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            recordBackgroundStatus(appContext, "Фоновая проверка не запущена: runtime не подготовлен: " + e.getMessage());
             return;
         }
 
         String clamscan = prefs.getString("clamscan_path", RuntimeAssetsManager.getClamscanPath(appContext));
         String database = prefs.getString(KEY_DATABASE, RuntimeAssetsManager.getDatabasePath(appContext));
         if (TextUtils.isEmpty(clamscan) || TextUtils.isEmpty(database)) {
+            recordBackgroundStatus(appContext, "Фоновая проверка не запущена: пустой путь clamscan или баз");
             return;
         }
         if (!new File(clamscan).exists() || !new File(database).exists()) {
+            recordBackgroundStatus(appContext, "Фоновая проверка не запущена: clamscan или база не найдены");
             return;
         }
 
+        recordBackgroundStatus(appContext, "Фоновая проверка: планирую новые файлы в " + target);
         ScanPlanner.ScanPlan plan = ScanPlanner.buildPlan(appContext, target, true, modifiedAfter);
         long now = System.currentTimeMillis();
         if (plan.items.isEmpty()) {
@@ -189,9 +220,11 @@ public final class ProtectionScheduler {
                     .putLong(KEY_BACKGROUND_MONITOR_SINCE, now)
                     .putLong(KEY_LAST_BACKGROUND_SCAN, now)
                     .apply();
+            recordBackgroundStatus(appContext, "Фоновая проверка завершена: новых файлов нет");
             return;
         }
 
+        recordBackgroundStatus(appContext, "Фоновая проверка: найдено новых файлов " + plan.items.size());
         HashSet<String> ignoredThreats = new HashSet<String>(
                 prefs.getStringSet("ignored_threats", new HashSet<String>())
         );
@@ -204,6 +237,9 @@ public final class ProtectionScheduler {
             editor.putString(KEY_LAST_SCAN, new SimpleDateFormat("dd.MM HH:mm", Locale.US).format(new Date(now)));
             editor.putString(KEY_LAST_SCAN_RESULT, result.threats.isEmpty() ? "clean" : "threats");
             editor.putInt(KEY_LAST_THREAT_COUNT, result.threats.size());
+            recordBackgroundStatus(appContext, "Фоновая проверка завершена: код " + result.exitCode + ", угроз " + result.threats.size());
+        } else {
+            recordBackgroundStatus(appContext, "Фоновая проверка завершилась с ошибкой: код " + result.exitCode);
         }
         editor.apply();
     }

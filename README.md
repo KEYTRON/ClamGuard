@@ -27,8 +27,8 @@ Current status:
 
 ## Versioning
 
-- Current version: `0.2.0`
-- Current versionCode: `2`
+- Current version: `0.2.1`
+- Current versionCode: `3`
 
 Version metadata lives in:
 

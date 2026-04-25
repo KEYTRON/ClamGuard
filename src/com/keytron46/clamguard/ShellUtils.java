@@ -1,4 +1,4 @@
-package com.keytron46.clamguard;
+package com.keytron.clamguard;
 
 import java.io.File;
 

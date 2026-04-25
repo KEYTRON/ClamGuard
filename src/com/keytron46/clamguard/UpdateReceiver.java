@@ -1,8 +1,9 @@
-package com.keytron46.clamguard;
+package com.keytron.clamguard;
 
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.util.Log;
 
 public class UpdateReceiver extends BroadcastReceiver {
     @Override
@@ -16,20 +17,14 @@ public class UpdateReceiver extends BroadcastReceiver {
             return;
         }
 
-        final PendingResult pendingResult = goAsync();
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    if (ProtectionScheduler.ACTION_DAILY_UPDATE.equals(action)) {
-                        ProtectionScheduler.runAutoUpdateIfDue(context);
-                    } else if (ProtectionScheduler.ACTION_BACKGROUND_SCAN.equals(action)) {
-                        ProtectionScheduler.runBackgroundScanIfDue(context);
-                    }
-                } finally {
-                    pendingResult.finish();
-                }
-            }
-        }, "clamguard-background-work").start();
+        try {
+            ForegroundScanService.start(context.getApplicationContext(), action);
+        } catch (RuntimeException e) {
+            Log.e("ClamGuard", "Failed to start foreground background worker", e);
+            ProtectionScheduler.recordBackgroundStatus(
+                    context,
+                    "Не удалось запустить foreground service: " + e.getClass().getSimpleName()
+            );
+        }
     }
 }

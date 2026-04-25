@@ -1,4 +1,4 @@
-package com.keytron46.clamguard;
+package com.keytron.clamguard;
 
 import android.content.Context;
 import android.content.res.AssetManager;
@@ -12,7 +12,7 @@ import java.io.OutputStreamWriter;
 public final class RuntimeAssetsManager {
     private static final String ASSET_ROOT = "runtime";
     private static final String MARKER_NAME = ".runtime-version";
-    private static final String RUNTIME_VERSION = "built-in-runtime-v2";
+    private static final String RUNTIME_VERSION = "built-in-runtime-v3";
 
     private RuntimeAssetsManager() {
     }
@@ -35,6 +35,10 @@ public final class RuntimeAssetsManager {
 
     public static String getFreshclamConfigPath(Context context) {
         return new File(getRuntimeRoot(context), "usr/etc/clamav/freshclam.conf").getAbsolutePath();
+    }
+
+    public static String getCertsPath(Context context) {
+        return new File(getRuntimeRoot(context), "usr/etc/clamav/certs").getAbsolutePath();
     }
 
     public static String getQuarantinePath(Context context) {
