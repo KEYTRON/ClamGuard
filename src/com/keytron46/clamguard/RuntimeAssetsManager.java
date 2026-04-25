@@ -8,6 +8,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStreamWriter;
+import java.io.FilenameFilter;
 
 public final class RuntimeAssetsManager {
     private static final String ASSET_ROOT = "runtime";
@@ -43,6 +44,41 @@ public final class RuntimeAssetsManager {
 
     public static String getQuarantinePath(Context context) {
         return new File(context.getFilesDir(), "quarantine").getAbsolutePath();
+    }
+
+    public static boolean hasUsableDatabase(Context context) {
+        return hasUsableDatabase(new File(getDatabasePath(context)));
+    }
+
+    public static boolean hasUsableDatabase(File databaseDir) {
+        if (databaseDir == null || !databaseDir.isDirectory()) {
+            return false;
+        }
+        String[] files = databaseDir.list(new FilenameFilter() {
+            @Override
+            public boolean accept(File dir, String name) {
+                if (name == null) {
+                    return false;
+                }
+                String lower = name.toLowerCase();
+                return lower.endsWith(".cvd")
+                        || lower.endsWith(".cld")
+                        || lower.endsWith(".cud")
+                        || lower.endsWith(".hdb")
+                        || lower.endsWith(".hdu")
+                        || lower.endsWith(".mdb")
+                        || lower.endsWith(".mdu")
+                        || lower.endsWith(".ndb")
+                        || lower.endsWith(".ndu")
+                        || lower.endsWith(".ldb")
+                        || lower.endsWith(".ldu")
+                        || lower.endsWith(".sdb")
+                        || lower.endsWith(".fp")
+                        || lower.endsWith(".ign")
+                        || lower.endsWith(".ign2");
+            }
+        });
+        return files != null && files.length > 0;
     }
 
     public static void ensureInstalled(Context context) throws IOException {

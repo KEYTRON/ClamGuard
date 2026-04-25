@@ -474,7 +474,7 @@ public class MainActivity extends Activity {
         executor.execute(() -> {
             final DatabaseUpdateRunner.Result result = DatabaseUpdateRunner.run(this, RuntimeAssetsManager.getFreshclamPath(this), textOf(databasePathView), line -> mainHandler.post(() -> appendLog(line)));
             mainHandler.post(() -> {
-                databaseReady = (result.exitCode == 0);
+                databaseReady = (result.exitCode == 0) && RuntimeAssetsManager.hasUsableDatabase(this);
                 setBusy(false, databaseReady ? "Базы обновлены" : "Ошибка обновления баз", false);
                 updateDashboardFromState();
             });
@@ -482,6 +482,13 @@ public class MainActivity extends Activity {
     }
 
     private void startPlannedScan(final String modeLabel, final String planningStatus, final String scanningStatus, final String targetPath, final boolean includeInstalledApks, final long modifiedAfter, final boolean enableBackgroundMonitor) {
+        databaseReady = RuntimeAssetsManager.hasUsableDatabase(this);
+        if (!databaseReady) {
+            setBusy(false, "Базы сигнатур не установлены. Нажмите «Обновить базы».", false);
+            setProgressPresentation(modeLabel, getString(R.string.progress_percent_error), "Перед сканированием нужно загрузить базы ClamAV.", false);
+            updateActionAvailability();
+            return;
+        }
         setBusy(true, planningStatus, true);
         setProgressPresentation(modeLabel, getString(R.string.progress_percent_waiting), planningStatus, true);
         uniqueThreats.clear();
@@ -520,8 +527,21 @@ public class MainActivity extends Activity {
             } catch (Exception e) { output.append(e.getMessage()); }
             final int fCode = code; final String fOut = output.toString();
             mainHandler.post(() -> {
-                if (command.contains("CG_ENGINE")) parseEnvironmentOutput(fOut);
-                setBusy(false, fCode == 0 ? "Готово" : "Завершено с кодом " + fCode, false);
+                boolean environmentCheck = command.contains("CG_ENGINE");
+                if (environmentCheck) parseEnvironmentOutput(fOut);
+                String finalStatus = fCode == 0 ? "Готово" : "Завершено с кодом " + fCode;
+                if (environmentCheck && !databaseReady) {
+                    finalStatus = "Базы сигнатур не установлены";
+                }
+                setBusy(false, finalStatus, false);
+                if (environmentCheck && !databaseReady) {
+                    setProgressPresentation(
+                            getString(R.string.scan_mode_ready),
+                            getString(R.string.progress_percent_error),
+                            "Нажмите «Обновить базы» перед запуском сканирования.",
+                            false
+                    );
+                }
                 updateDashboardFromState();
                 if (fCode == 0 && onSuccess != null) onSuccess.run();
             });
@@ -531,10 +551,19 @@ public class MainActivity extends Activity {
     private void parseEnvironmentOutput(String output) {
         rootReady = ShellUtils.hasKnownSuBinary();
         moduleReady = output.contains("CG_ENGINE=1") && output.contains("CG_CLAMSCAN=1");
-        databaseReady = output.contains("CG_DATABASE=1") && output.contains("CG_MAIN=1");
+        databaseReady = output.contains("CG_DATABASE=1") && output.contains("CG_DB_READY=1");
         rootStatusValueView.setText(rootReady ? "Ready" : "Missing");
         moduleStatusValueView.setText(moduleReady ? "Ready" : "Missing");
         databaseStatusValueView.setText(databaseReady ? "Ready" : "Missing");
+        if (!busy && !databaseReady) {
+            statusTextView.setText("Базы сигнатур не установлены");
+            setProgressPresentation(
+                    getString(R.string.scan_mode_ready),
+                    getString(R.string.progress_percent_error),
+                    "Нажмите «Обновить базы» перед запуском сканирования.",
+                    false
+            );
+        }
     }
 
     private void updateDashboardFromState() {
@@ -552,6 +581,19 @@ public class MainActivity extends Activity {
         boolean scanRunning = prefs.getBoolean(ScanState.KEY_MANUAL_SCAN_RUNNING, false);
         String result = prefs.getString(ScanState.KEY_MANUAL_SCAN_RESULT, "");
         if (!scanRunning && TextUtils.isEmpty(result)) {
+            return;
+        }
+        if (!scanRunning && !RuntimeAssetsManager.hasUsableDatabase(this)) {
+            this.busy = false;
+            statusTextView.setText("Базы сигнатур не установлены");
+            setProgressPresentation(
+                    getString(R.string.scan_mode_ready),
+                    getString(R.string.progress_percent_error),
+                    "Нажмите «Обновить базы» перед запуском сканирования.",
+                    false
+            );
+            radarView.setActive(false);
+            updateActionAvailability();
             return;
         }
 
@@ -652,7 +694,10 @@ public class MainActivity extends Activity {
         return "([ -d " + shellQuote(RuntimeAssetsManager.getRuntimeRoot(this)) + " ] && echo CG_ENGINE=1 || echo CG_ENGINE=0) && "
                 + "([ -x " + shellQuote(textOf(clamscanPathView)) + " ] && echo CG_CLAMSCAN=1 || echo CG_CLAMSCAN=0) && "
                 + "([ -d " + shellQuote(textOf(databasePathView)) + " ] && echo CG_DATABASE=1 || echo CG_DATABASE=0) && "
-                + "([ -f " + shellQuote(textOf(databasePathView) + "/main.cvd") + " ] && echo CG_MAIN=1 || echo CG_MAIN=0)";
+                + "(ls " + shellQuote(textOf(databasePathView)) + "/*.cvd "
+                + shellQuote(textOf(databasePathView)) + "/*.cld "
+                + shellQuote(textOf(databasePathView)) + "/*.cud "
+                + shellQuote(textOf(databasePathView)) + "/*.hdb >/dev/null 2>&1 && echo CG_DB_READY=1 || echo CG_DB_READY=0)";
     }
 
     private void setProgressPresentation(String mode, String percent, String detail, boolean indeterminate) {
@@ -671,13 +716,14 @@ public class MainActivity extends Activity {
     }
 
     private void updateActionAvailability() {
-        boolean canAction = !busy;
-        quickScanButton.setEnabled(canAction); fullScanButton.setEnabled(canAction);
-        selectiveScanButton.setEnabled(canAction); updateDbButton.setEnabled(canAction);
-        quickScanButton.setAlpha(canAction ? 1f : 0.5f);
-        fullScanButton.setAlpha(canAction ? 1f : 0.5f);
-        selectiveScanButton.setAlpha(canAction ? 1f : 0.5f);
-        updateDbButton.setAlpha(canAction ? 1f : 0.5f);
+        boolean canUpdate = !busy && moduleReady;
+        boolean canScan = !busy && moduleReady && databaseReady;
+        quickScanButton.setEnabled(canScan); fullScanButton.setEnabled(canScan);
+        selectiveScanButton.setEnabled(canScan); updateDbButton.setEnabled(canUpdate);
+        quickScanButton.setAlpha(canScan ? 1f : 0.5f);
+        fullScanButton.setAlpha(canScan ? 1f : 0.5f);
+        selectiveScanButton.setAlpha(canScan ? 1f : 0.5f);
+        updateDbButton.setAlpha(canUpdate ? 1f : 0.5f);
     }
 
     private void updateScanProgress(String mode, long sb, long tb, int sf, int tf, ScanPlanner.ScanItem item) {

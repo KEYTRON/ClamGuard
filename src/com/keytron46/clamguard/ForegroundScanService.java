@@ -173,6 +173,10 @@ public class ForegroundScanService extends Service {
             finishManualScan(prefs, mode, 2, 0, "clamscan или база сигнатур не найдены", new HashSet<String>());
             return;
         }
+        if (!RuntimeAssetsManager.hasUsableDatabase(new File(database))) {
+            finishManualScan(prefs, mode, 2, 0, "Базы сигнатур не установлены. Нажмите «Обновить базы».", new HashSet<String>());
+            return;
+        }
 
         updateManualScanStatus(prefs, mode, "Планирую файлы для проверки", 0L, 0L, 0, 0, "");
         updateNotification("Сканирование ClamGuard", "Планирую файлы для проверки");
@@ -188,6 +192,7 @@ public class ForegroundScanService extends Service {
         ClamScanner.Result result = ClamScanner.scanPlan(this, clamscan, database, plan, ignoredThreats, new ClamScanner.ProgressCallback() {
             @Override
             public void onLog(String line) {
+                Log.i(TAG, "clamscan: " + line);
             }
 
             @Override
