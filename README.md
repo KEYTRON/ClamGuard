@@ -2,6 +2,10 @@
 
 ClamGuard is an Android antivirus frontend built around ClamAV.
 
+![Android](https://github.com/KEYTRON/ClamGuard/actions/workflows/android.yml/badge.svg)
+
+[View ClamGuard workflow runs](https://github.com/KEYTRON/ClamGuard/actions)
+
 The project provides an Android-first UI for:
 - scanning shared storage and APK files
 - updating virus databases
