@@ -694,10 +694,20 @@ public class MainActivity extends Activity {
         return "([ -d " + shellQuote(RuntimeAssetsManager.getRuntimeRoot(this)) + " ] && echo CG_ENGINE=1 || echo CG_ENGINE=0) && "
                 + "([ -x " + shellQuote(textOf(clamscanPathView)) + " ] && echo CG_CLAMSCAN=1 || echo CG_CLAMSCAN=0) && "
                 + "([ -d " + shellQuote(textOf(databasePathView)) + " ] && echo CG_DATABASE=1 || echo CG_DATABASE=0) && "
-                + "(ls " + shellQuote(textOf(databasePathView)) + "/*.cvd "
-                + shellQuote(textOf(databasePathView)) + "/*.cld "
-                + shellQuote(textOf(databasePathView)) + "/*.cud "
-                + shellQuote(textOf(databasePathView)) + "/*.hdb >/dev/null 2>&1 && echo CG_DB_READY=1 || echo CG_DB_READY=0)";
+                + buildDatabaseReadyCheck(textOf(databasePathView));
+    }
+
+    // One glob per extension: a single `ls a/*.cvd a/*.cld ...` fails as soon as any
+    // pattern has no match, which reported installed .cvd databases as missing.
+    private String buildDatabaseReadyCheck(String databaseDir) {
+        String[] exts = {"cvd", "cld", "cud", "hdb", "hdu", "mdb", "mdu", "ndb", "ndu",
+                "ldb", "ldu", "sdb", "fp", "ign", "ign2"};
+        StringBuilder sb = new StringBuilder("(for f in");
+        for (String ext : exts) {
+            sb.append(' ').append(shellQuote(databaseDir)).append("/*.").append(ext);
+        }
+        sb.append("; do [ -e \"$f\" ] && { echo CG_DB_READY=1; exit 0; }; done; echo CG_DB_READY=0)");
+        return sb.toString();
     }
 
     private void setProgressPresentation(String mode, String percent, String detail, boolean indeterminate) {
